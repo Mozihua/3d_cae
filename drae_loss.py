@@ -5,20 +5,22 @@ from torch.autograd import Function
 
 
 class DRAELossFunction(Function):
+    """ Discriminative loss between original input and the reconstruction
+    target."""
     def __init__(self, lamb=0.1, size_average=True):
         super(DRAELossFunction, self).__init__()
         self.lamb = lamb
         self.size_average = size_average
 
     def forward(self, input, target):
-        buffer = input.new().resize_as_(input).copy_(input)
+        buf = input.new().resize_as_(input).copy_(input)
         self.dims = input.size()
-        buffer.add_(-1, target)
-        buffer = buffer.view(buffer.size(0), -1)  # reshape the error into 2-D
-        self.error = buffer.new().resize_as_(buffer).copy_(buffer)  # raw error
-        torch.mul(buffer, buffer, out=buffer)  # squared error
-        Err = torch.sum(buffer, 1)  # reconstruction error of each sample (summer square error)
-        del buffer
+        buf.add_(-1, target)
+        buf = buf.view(buf.size(0), -1)  # reshape the error into 2-D
+        self.error = buf.new().resize_as_(buf).copy_(buf)  # raw error
+        torch.mul(buf, buf, out=buf)  # squared error
+        Err = torch.sum(buf, 1)  # reconstruction error of each sample
+        del buf
 
         # discriminative labelling
         self.sErr, self.idx = torch.sort(Err, 0)
@@ -46,7 +48,8 @@ class DRAELossFunction(Function):
                 self.Sw2 = Sw2
                 self.Sb = Sb
 
-        output = self.sErr[:self.T_idx].sum()  # only positive label is considered
+        # only positive label is considered
+        output = self.sErr[:self.T_idx].sum()
         if self.size_average:
             output = output / self.T_idx
         output = output + self.lamb * optObj
@@ -60,7 +63,8 @@ class DRAELossFunction(Function):
         grad_input = self.error.new().resize_as_(self.error).copy_(self.error)
         if self.size_average:
             grad_input.mul_(1. / self.T_idx)
-        grad_input[self.idx[self.T_idx:]] = 0  # only the gradient of positive sample is backwarded
+        # only the gradient of positive sample is backwarded
+        grad_input[self.idx[self.T_idx:]] = 0
         grad_input.mul_(2.)
 
         # gradient for the discriminative part
@@ -70,7 +74,8 @@ class DRAELossFunction(Function):
         Sb2 = self.Sb ** 2
         inlierGrad = inlierErr.add(-self.inlierMeanErr).mul(self.Sb).add(
             -inlierErr.add(-self.allMeanErr).mul(Sw)).mul(1. / Sb2)
-        inlierGrad.mul_(2.0 * 2.0 * self.lamb).resize_(inlierGrad.size(0), 1)  # constant factor
+        # constant factor
+        inlierGrad.mul_(2.0 * 2.0 * self.lamb).resize_(inlierGrad.size(0), 1)
         inlierGrad = inlierGrad.repeat(1, self.error.size(1))
         outlierGrad = outlierErr.add(-self.outlierMeanErr).mul(self.Sb).add(
             -outlierErr.add(-self.allMeanErr).mul(Sw)).mul(1. / Sb2)
@@ -96,6 +101,7 @@ class DRAELossFunction(Function):
 
 
 class DRAELoss(nn.Module):
+    """ DRAELoss module interface. """
 
     def __init__(self, lamb, size_average=True):
         super(DRAELoss, self).__init__()
